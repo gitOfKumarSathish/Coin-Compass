@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useCreateGoal, useUpdateGoal, useGoals } from "@/hooks/useGoals";
 import { useAccounts } from "@/hooks/useAccounts";
+import { fundingAccounts } from "@/lib/accounts";
 import { useHoldings } from "@/hooks/useHoldings";
 import { useCanSeeWealth } from "@/hooks/useAuth";
 import { useSettings } from "@/hooks/useSettings";
@@ -101,6 +102,10 @@ export function GoalFormDialog({ open, onOpenChange, goal }: Props) {
    * their own pages, so a goal reading one would be reading a market price
    * rather than money someone set aside.
    */
+  // The app's own buckets aren't places money is set aside — Savings & Deposits
+  // holds every deposit's principal at once — and the API refuses them.
+  const payFrom = fundingAccounts(accounts);
+
   const linkableHoldings = (holdings ?? []).filter(
     (h) => h.subtype !== "stocks" && h.subtype !== "mutual_funds"
   );
@@ -194,7 +199,7 @@ export function GoalFormDialog({ open, onOpenChange, goal }: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_ACCOUNT}>{t("goalForm.noAccount")}</SelectItem>
-                {(accounts ?? []).map((a) => (
+                {payFrom.map((a) => (
                   <SelectItem key={a._id} value={a._id} disabled={takenBy.has(a._id)}>
                     {takenBy.has(a._id)
                       ? t("goalForm.accountTaken", { name: a.name, goal: takenBy.get(a._id) })

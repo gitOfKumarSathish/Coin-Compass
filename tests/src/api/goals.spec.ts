@@ -430,3 +430,70 @@ describe("Goals — funding and projection", () => {
     expect(unfunded).toMatchObject({ fundedMonthly: 0, schedule: "unknown", projectedDate: null });
   });
 });
+
+describe("Goals — the app's own buckets are not somewhere money is set aside", () => {
+  it("refuses to track Savings & Deposits", async () => {
+    const u = await createVerifiedUser();
+    const account = (await u.session.http.post("/accounts", { name: "HDFC", type: "bank" })).data;
+    const h = (
+      await u.session.http.post("/holdings", {
+        name: "SBI FD",
+        class: "saving",
+        subtype: "fixed_deposit",
+        value: 0,
+      })
+    ).data;
+    // Paying in creates the bucket, which holds the principal of EVERY deposit.
+    await u.session.http.post(`/holdings/${h._id}/deposit`, { account: account._id, amount: 5000 });
+    const bucket = (await u.session.http.get("/accounts")).data.find(
+      (a: any) => a.type === "deposits"
+    );
+    expect(bucket).toBeTruthy();
+
+    // A goal reading it would count every deposit as progress toward one target.
+    const res = await u.session.http.post("/goals", {
+      name: "Anything",
+      targetAmount: 10000,
+      linkedAccount: bucket._id,
+    });
+    expect(res.status).toBe(400);
+    expect(res.data.code).toBe("ACCOUNT_SYSTEM_MANAGED");
+  });
+
+  it("refuses the other app-managed ledgers too", async () => {
+    const u = await createVerifiedUser();
+    const account = (await u.session.http.post("/accounts", { name: "HDFC", type: "bank" })).data;
+    // Lending, reflected in the ledger, creates Money Lent — a record of someone
+    // else's debt rather than money anyone set aside.
+    const credit = await u.session.http.post("/credits", {
+      person: "Rahul",
+      direction: "given",
+      amount: 2500,
+      account: account._id,
+      reflected: true,
+    });
+    expect(credit.status).toBe(201);
+    const lent = (await u.session.http.get("/accounts")).data.find(
+      (a: any) => a.type === "receivable"
+    );
+    expect(lent).toBeTruthy();
+
+    const goal = (
+      await u.session.http.post("/goals", { name: "Anything", targetAmount: 10000 })
+    ).data;
+    const res = await u.session.http.patch(`/goals/${goal._id}`, { linkedAccount: lent._id });
+    expect(res.status).toBe(400);
+    expect(res.data.code).toBe("ACCOUNT_SYSTEM_MANAGED");
+  });
+
+  it("still takes an ordinary account", async () => {
+    const u = await createVerifiedUser();
+    const account = (await u.session.http.post("/accounts", { name: "Savings", type: "bank" })).data;
+    const res = await u.session.http.post("/goals", {
+      name: "Emergency fund",
+      targetAmount: 100000,
+      linkedAccount: account._id,
+    });
+    expect(res.status).toBe(201);
+  });
+});

@@ -751,7 +751,11 @@ export type NotificationType =
   | "recurring.due_soon"
   | "recurring.overdue"
   | "budget.exceeded"
-  | "balance.low";
+  | "balance.low"
+  | "goal.cycle_rolled"
+  | "goal.behind"
+  | "goal.achieved"
+  | "deposit.matured";
 
 export interface AppNotification {
   _id: string;

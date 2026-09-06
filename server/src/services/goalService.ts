@@ -121,8 +121,23 @@ export async function assertAccountLinkable(
   exceptGoalId?: unknown
 ): Promise<void> {
   if (!accountId) return;
-  const account = await Account.findOne({ _id: accountId, user: userId }).select("_id").lean();
+  const account = await Account.findOne({ _id: accountId, user: userId })
+    .select("_id type system")
+    .lean();
   if (!account) throw new HttpError(404, "Account not found");
+  // The app's own ledgers are not a place anyone puts money aside. Savings &
+  // Deposits holds the principal of EVERY deposit, so a goal reading it would
+  // count the lot as progress toward one target; Stock Investments is the same
+  // for lots, and Money Lent / Money Owed are records of other people's debts.
+  if (
+    account.system ||
+    account.type === "securities" ||
+    account.type === "deposits" ||
+    account.type === "receivable" ||
+    account.type === "payable"
+  ) {
+    throw new HttpError(400, "That account is managed by the app", "ACCOUNT_SYSTEM_MANAGED");
+  }
   const clash = await Goal.findOne({
     user: userId,
     linkedAccount: accountId,

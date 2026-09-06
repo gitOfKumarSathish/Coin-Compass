@@ -4,6 +4,8 @@ import { RecurringTransaction } from "../models/RecurringTransaction";
 import { Budget } from "../models/Budget";
 import { Account } from "../models/Account";
 import { Goal } from "../models/Goal";
+import { Holding } from "../models/Holding";
+import { Transaction } from "../models/Transaction";
 import { getSpentForCategory } from "./reportService";
 import { computeAllBalances } from "./balanceService";
 import { fundingByGoal, projectionFor, rollDueGoalCycles } from "./goalCycleService";
@@ -17,8 +19,11 @@ import {
   dueDedupeKey,
   budgetDedupeKey,
   balanceDedupeKey,
+  goalAchievedDedupeKey,
   goalBehindDedupeKey,
   goalCycleDedupeKey,
+  depositMaturedDedupeKey,
+  isDepositMatured,
   monthKey,
 } from "./notificationLogic";
 
@@ -79,6 +84,7 @@ export async function runNotificationSweep(now: Date = new Date()): Promise<numb
   created += await sweepBudgets(now);
   created += await sweepBalances(now);
   created += await sweepGoals(now);
+  created += await sweepMaturedDeposits(now);
   return created;
 }
 
@@ -130,6 +136,20 @@ async function sweepGoals(now: Date): Promise<number> {
           funding.get(String(goal._id)),
           now
         );
+        // Arriving is worth saying. The app already says when you're falling
+        // behind and said nothing at all when you got there.
+        if ((goal.savedAmount ?? 0) >= goal.targetAmount && goal.targetAmount > 0) {
+          const hit = await notify({
+            user: uid,
+            type: "goal.achieved",
+            params: { name: goal.name, amount: goal.targetAmount, currency: goal.currency },
+            link: "/goals",
+            dedupeKey: goalAchievedDedupeKey(String(goal._id)),
+          });
+          if (hit) created += 1;
+          continue;
+        }
+
         if (projection.schedule !== "behind") continue;
         const inserted = await notify({
           user: uid,
@@ -248,6 +268,52 @@ async function sweepBalances(now: Date): Promise<number> {
       }
     } catch (e) {
       console.error("[notify] balance sweep failed for user", String(uid), e);
+    }
+  }
+  return created;
+}
+
+/**
+ * Deposits that have finished, and nobody has been told.
+ *
+ * This is the one moment in the app where money has to be moved by hand. Every
+ * other schedule posts itself; a maturity is the bank crediting an account
+ * CoinCompass can't see, so without a nudge an FD that matured last week looks
+ * exactly like one maturing in 2029.
+ *
+ * Only deposits still holding something are worth mentioning — one already paid
+ * out sits at zero and needs nothing. Once per deposit, ever: repeating it every
+ * night until someone records the payout would just teach them to ignore it.
+ */
+async function sweepMaturedDeposits(now: Date): Promise<number> {
+  const deposits = await Holding.find({
+    value: { $gt: 0 },
+    $or: [{ maturityDate: { $ne: null, $lte: now } }, { termCount: { $ne: null } }],
+  })
+    .select("user name value currency maturityDate termCount")
+    .lean();
+
+  let created = 0;
+  for (const deposit of deposits) {
+    try {
+      // Instalments actually paid in, which is what serves a term.
+      const paidCount = await Transaction.countDocuments({
+        user: deposit.user,
+        holding: deposit._id,
+        holdingContribution: { $gt: 0 },
+      });
+      if (!isDepositMatured(deposit, paidCount, now)) continue;
+
+      const inserted = await notify({
+        user: deposit.user,
+        type: "deposit.matured",
+        params: { name: deposit.name, amount: deposit.value, currency: deposit.currency },
+        link: "/net-worth",
+        dedupeKey: depositMaturedDedupeKey(String(deposit._id)),
+      });
+      if (inserted) created += 1;
+    } catch (e) {
+      console.error("[notify] deposit maturity sweep failed for", String(deposit._id), e);
     }
   }
   return created;
