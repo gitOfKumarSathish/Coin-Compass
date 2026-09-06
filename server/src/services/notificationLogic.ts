@@ -59,3 +59,41 @@ export function goalCycleDedupeKey(goalId: string, cycleIndex: number): string {
 export function goalBehindDedupeKey(goalId: string, month: string): string {
   return `goal.behind:${goalId}:${month}`;
 }
+
+/**
+ * One "you reached it" per goal, ever.
+ *
+ * Not per month like the "behind" nudge: arriving happens once, and a goal that
+ * dips back under its target after a withdrawal should not announce itself again
+ * on the way back up.
+ */
+export function goalAchievedDedupeKey(goalId: string): string {
+  return `goal.achieved:${goalId}`;
+}
+
+/**
+ * One "it matured" per deposit, ever. A deposit matures once; repeating the
+ * reminder every night until someone records the payout would train them to
+ * ignore it, and the card already carries the state in the meantime.
+ */
+export function depositMaturedDedupeKey(holdingId: string): string {
+  return `deposit.matured:${holdingId}`;
+}
+
+/**
+ * Has this deposit finished?
+ *
+ * Two ways to be done, and a deposit may have only one of them. A fixed deposit
+ * knows a date; a recurring deposit knows a count of instalments and may never
+ * have been given a date at all. Either is enough.
+ *
+ * Pure, so both conditions can be pinned without a database.
+ */
+export function isDepositMatured(
+  deposit: { maturityDate?: Date | null; termCount?: number | null },
+  paidCount: number,
+  now: Date
+): boolean {
+  if (deposit.maturityDate && new Date(deposit.maturityDate) <= now) return true;
+  return Boolean(deposit.termCount) && paidCount >= (deposit.termCount as number);
+}

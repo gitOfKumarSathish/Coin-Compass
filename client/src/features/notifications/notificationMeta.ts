@@ -3,7 +3,11 @@ import {
   CircleOff,
   CalendarClock,
   AlertTriangle,
+  PiggyBank,
+  RefreshCw,
   Target,
+  TrendingDown,
+  Trophy,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -23,6 +27,13 @@ export const NOTIFICATION_META: Record<NotificationType, { icon: LucideIcon; ton
   "recurring.overdue": { icon: AlertTriangle, tone: "warning" },
   "budget.exceeded": { icon: Target, tone: "expense" },
   "balance.low": { icon: Wallet, tone: "warning" },
+  // The goal pair predate this map and never reached it, so both fell through to
+  // the generic bell — the icon that says "something happened" about the two
+  // notifications with the most to say.
+  "goal.cycle_rolled": { icon: RefreshCw, tone: "primary" },
+  "goal.behind": { icon: TrendingDown, tone: "warning" },
+  "goal.achieved": { icon: Trophy, tone: "income" },
+  "deposit.matured": { icon: PiggyBank, tone: "income" },
 };
 
 const TONE_CLASS: Record<Tone, string> = {

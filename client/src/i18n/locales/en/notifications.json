@@ -49,6 +49,16 @@
       "behind": {
         "title": "Goal running late",
         "body": "At {{amount}}/month, {{name}} won't reach its target by {{date}}."
+      },
+      "achieved": {
+        "title": "Goal reached",
+        "body": "{{name}} hit its target of {{amount}}."
+      }
+    },
+    "deposit": {
+      "matured": {
+        "title": "Deposit matured",
+        "body": "{{name}} has finished. Record the payout to move the {{amount}} back into an account."
       }
     }
   }

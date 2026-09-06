@@ -15,6 +15,8 @@ export const NOTIFICATION_TYPES = [
   "balance.low", // a (non-card) account balance went negative
   "goal.cycle_rolled", // a repeating goal finished a cycle and started the next
   "goal.behind", // at its current funding, a goal won't reach its target date
+  "goal.achieved", // a goal reached its target
+  "deposit.matured", // an FD/RD reached its maturity date or served its full term
 ] as const;
 
 const notificationSchema = new Schema(

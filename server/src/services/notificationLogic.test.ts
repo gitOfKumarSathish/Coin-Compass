@@ -9,6 +9,7 @@ import {
   dueDedupeKey,
   budgetDedupeKey,
   balanceDedupeKey,
+  isDepositMatured,
 } from "./notificationLogic";
 
 describe("notificationLogic.ruleTitle", () => {
@@ -54,5 +55,36 @@ describe("notificationLogic dedupe keys", () => {
   it("keys the low-balance alert to a monthly bucket", () => {
     expect(monthKey(d)).toBe("2026-07");
     expect(balanceDedupeKey(id, d)).toBe("balance.low:abc123:2026-07");
+  });
+});
+
+describe("a deposit that has finished", () => {
+  const now = new Date("2026-09-06T10:00:00Z");
+
+  it("is done once its maturity date arrives", () => {
+    expect(isDepositMatured({ maturityDate: new Date("2026-09-05") }, 0, now)).toBe(true);
+    expect(isDepositMatured({ maturityDate: new Date("2026-09-07") }, 0, now)).toBe(false);
+    // The day itself counts: a deposit maturing today has matured.
+    expect(isDepositMatured({ maturityDate: new Date("2026-09-06T09:00:00Z") }, 0, now)).toBe(true);
+  });
+
+  it("is done once the last instalment is paid, date or no date", () => {
+    // A recurring deposit may never have been given a maturity date — the term
+    // is what it agreed to, so the term is what finishes it.
+    expect(isDepositMatured({ termCount: 12 }, 12, now)).toBe(true);
+    expect(isDepositMatured({ termCount: 12 }, 11, now)).toBe(false);
+    expect(isDepositMatured({ termCount: 12 }, 13, now)).toBe(true);
+  });
+
+  it("needs one of the two, not both", () => {
+    // An open-ended pot with neither a date nor a term never "matures".
+    expect(isDepositMatured({}, 500, now)).toBe(false);
+    expect(isDepositMatured({ maturityDate: null, termCount: null }, 9, now)).toBe(false);
+    // A term served counts even though the date is still ahead.
+    expect(isDepositMatured({ maturityDate: new Date("2027-01-01"), termCount: 6 }, 6, now)).toBe(true);
+  });
+
+  it("treats a term of zero as no term", () => {
+    expect(isDepositMatured({ termCount: 0 }, 0, now)).toBe(false);
   });
 });
