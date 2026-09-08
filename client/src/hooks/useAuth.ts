@@ -174,7 +174,11 @@ export function useVerifyEmail() {
     mutationFn: async (token: string) =>
       (await api.post<{ user: AuthUser }>("/auth/verify-email", { token })).data.user,
     onSuccess: (user) => {
-      queryClient.clear();
+      // Drop the pre-verification cache, but keep the ["me"] query itself alive.
+      // VerifyEmailPage redirects reactively off useMe(); clearing the cache
+      // wholesale destroys that observer, so the fresh user set below would never
+      // reach the component and the page sits on "Verifying…" forever.
+      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
       queryClient.setQueryData(["me"], user);
     },
   });
