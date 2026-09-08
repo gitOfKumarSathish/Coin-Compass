@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -8,32 +8,38 @@ import { useSettings } from "@/hooks/useSettings";
 import { useMe, useCanSeeWealth } from "@/hooks/useAuth";
 import { PinLock } from "@/features/settings/PinLock";
 
-import DashboardPage from "@/routes/DashboardPage";
-import TransactionsPage from "@/routes/TransactionsPage";
-import AccountsPage from "@/routes/AccountsPage";
-import AccountDetailPage from "@/routes/AccountDetailPage";
-import BudgetsPage from "@/routes/BudgetsPage";
-import GoalsPage from "@/routes/GoalsPage";
-import NetWorthPage from "@/routes/NetWorthPage";
-import LoansPage from "@/routes/LoansPage";
-import CreditsPage from "@/routes/CreditsPage";
-import GoldPage from "@/routes/GoldPage";
-import StocksPage from "@/routes/StocksPage";
-import FundsPage from "@/routes/FundsPage";
-import ReportsPage from "@/routes/ReportsPage";
-import InsightsPage from "@/routes/InsightsPage";
-import CalendarPage from "@/routes/CalendarPage";
-import RecurringPage from "@/routes/RecurringPage";
-import CategoriesPage from "@/routes/CategoriesPage";
-import NotificationsPage from "@/routes/NotificationsPage";
-import SettingsPage from "@/routes/SettingsPage";
-import NotFoundPage from "@/routes/NotFoundPage";
-import LoginPage from "@/routes/LoginPage";
-import TwoFactorPage from "@/routes/TwoFactorPage";
-import SignupPage from "@/routes/SignupPage";
-import VerifyEmailPage from "@/routes/VerifyEmailPage";
-import ForgotPasswordPage from "@/routes/ForgotPasswordPage";
-import ResetPasswordPage from "@/routes/ResetPasswordPage";
+/*
+ * Pages load on demand. Importing all 26 up front put every screen — plus
+ * recharts, which most of them pull in — into the entry bundle, so opening the
+ * login page downloaded the whole app. Each page is its own chunk now; the
+ * Suspense boundaries below cover the fetch.
+ */
+const DashboardPage = lazy(() => import("@/routes/DashboardPage"));
+const TransactionsPage = lazy(() => import("@/routes/TransactionsPage"));
+const AccountsPage = lazy(() => import("@/routes/AccountsPage"));
+const AccountDetailPage = lazy(() => import("@/routes/AccountDetailPage"));
+const BudgetsPage = lazy(() => import("@/routes/BudgetsPage"));
+const GoalsPage = lazy(() => import("@/routes/GoalsPage"));
+const NetWorthPage = lazy(() => import("@/routes/NetWorthPage"));
+const LoansPage = lazy(() => import("@/routes/LoansPage"));
+const CreditsPage = lazy(() => import("@/routes/CreditsPage"));
+const GoldPage = lazy(() => import("@/routes/GoldPage"));
+const StocksPage = lazy(() => import("@/routes/StocksPage"));
+const FundsPage = lazy(() => import("@/routes/FundsPage"));
+const ReportsPage = lazy(() => import("@/routes/ReportsPage"));
+const InsightsPage = lazy(() => import("@/routes/InsightsPage"));
+const CalendarPage = lazy(() => import("@/routes/CalendarPage"));
+const RecurringPage = lazy(() => import("@/routes/RecurringPage"));
+const CategoriesPage = lazy(() => import("@/routes/CategoriesPage"));
+const NotificationsPage = lazy(() => import("@/routes/NotificationsPage"));
+const SettingsPage = lazy(() => import("@/routes/SettingsPage"));
+const NotFoundPage = lazy(() => import("@/routes/NotFoundPage"));
+const LoginPage = lazy(() => import("@/routes/LoginPage"));
+const TwoFactorPage = lazy(() => import("@/routes/TwoFactorPage"));
+const SignupPage = lazy(() => import("@/routes/SignupPage"));
+const VerifyEmailPage = lazy(() => import("@/routes/VerifyEmailPage"));
+const ForgotPasswordPage = lazy(() => import("@/routes/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("@/routes/ResetPasswordPage"));
 
 /** Hydrate per-user settings (currency, PIN) once authenticated. */
 function AuthedBootstrap() {
@@ -92,6 +98,37 @@ function RequireWealth() {
   return <Outlet />;
 }
 
+/**
+ * Suspense boundary for the signed-out pages, which render on their own with no
+ * shell around them.
+ */
+function PublicRoutes() {
+  return (
+    <Suspense fallback={<FullScreenSplash />}>
+      <Outlet />
+    </Suspense>
+  );
+}
+
+/**
+ * Suspense boundary for the pages inside the shell. It sits *under* AppShell on
+ * purpose: the sidebar, top bar and bottom nav stay mounted while a page chunk
+ * loads, so only the content area shows the spinner.
+ */
+function ShellRoutes() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        </div>
+      }
+    >
+      <Outlet />
+    </Suspense>
+  );
+}
+
 export function App() {
   const applyTheme = useUIStore((s) => s.applyTheme);
 
@@ -107,38 +144,42 @@ export function App() {
   return (
     <TooltipProvider delayDuration={200}>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/login/2fa" element={<TwoFactorPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route element={<PublicRoutes />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login/2fa" element={<TwoFactorPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+        </Route>
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/transactions" element={<TransactionsPage />} />
-            <Route path="/accounts" element={<AccountsPage />} />
-            <Route path="/accounts/:id" element={<AccountDetailPage />} />
-            <Route path="/budgets" element={<BudgetsPage />} />
-            <Route path="/goals" element={<GoalsPage />} />
-            <Route element={<RequireWealth />}>
-              <Route path="/net-worth" element={<NetWorthPage />} />
-              {/* Stocks show position values and feed net worth, so they sit
-                  behind the same lock (matched server-side on /api/stocks). */}
-              <Route path="/stocks" element={<StocksPage />} />
-              <Route path="/funds" element={<FundsPage />} />
+            <Route element={<ShellRoutes />}>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/transactions" element={<TransactionsPage />} />
+              <Route path="/accounts" element={<AccountsPage />} />
+              <Route path="/accounts/:id" element={<AccountDetailPage />} />
+              <Route path="/budgets" element={<BudgetsPage />} />
+              <Route path="/goals" element={<GoalsPage />} />
+              <Route element={<RequireWealth />}>
+                <Route path="/net-worth" element={<NetWorthPage />} />
+                {/* Stocks show position values and feed net worth, so they sit
+                    behind the same lock (matched server-side on /api/stocks). */}
+                <Route path="/stocks" element={<StocksPage />} />
+                <Route path="/funds" element={<FundsPage />} />
+              </Route>
+              <Route path="/loans" element={<LoansPage />} />
+              <Route path="/credits" element={<CreditsPage />} />
+              <Route path="/gold" element={<GoldPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/insights" element={<InsightsPage />} />
+              <Route path="/calendar" element={<CalendarPage />} />
+              <Route path="/recurring" element={<RecurringPage />} />
+              <Route path="/categories" element={<CategoriesPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
-            <Route path="/loans" element={<LoansPage />} />
-            <Route path="/credits" element={<CreditsPage />} />
-            <Route path="/gold" element={<GoldPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/insights" element={<InsightsPage />} />
-            <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/recurring" element={<RecurringPage />} />
-            <Route path="/categories" element={<CategoriesPage />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Route>
       </Routes>

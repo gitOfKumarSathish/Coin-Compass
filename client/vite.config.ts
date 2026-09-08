@@ -71,9 +71,14 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         output: {
+          // Only libraries the app shell itself needs on first paint belong
+          // here. Naming a library in manualChunks makes Vite preload its chunk
+          // from index.html even when nothing in the entry graph imports it —
+          // recharts used to be listed and cost every visitor ~115 kB gzip on
+          // the login page. Left unlisted, it lands in a shared chunk that only
+          // the chart pages pull in.
           manualChunks: {
             react: ["react", "react-dom", "react-router-dom"],
-            charts: ["recharts"],
             motion: ["motion"],
             query: ["@tanstack/react-query"],
           },
