@@ -302,10 +302,17 @@ export async function unlinkSplitForTransaction(uid: unknown, splitId: unknown):
   await Split.deleteOne({ _id: splitId, user: uid });
 }
 
-/** Participants of a split, resolved from their credits, with what's still owed. */
-export async function getSplitParticipants(uid: unknown, splitId: unknown) {
-  const [credits, all, people] = await Promise.all([
-    Credit.find({ user: uid, split: splitId }).select("person personRef amount date").lean(),
+/**
+ * The half of participant resolution that has nothing to do with which split you
+ * are looking at: the whole ledger allocated per person, plus the person index.
+ *
+ * It lives on its own because listSplits needs it exactly once. Resolving it
+ * per split meant re-reading every credit and every person the user owns for
+ * each bill on the page, so a ledger that grew made a list of N splits cost
+ * N full scans of it.
+ */
+async function loadLedgerContext(uid: unknown) {
+  const [all, people] = await Promise.all([
     Credit.find({ user: uid }).select("person personRef direction amount date settles").lean(),
     Person.find({ user: uid }).select("key name").lean(),
   ]);
@@ -338,13 +345,29 @@ export async function getSplitParticipants(uid: unknown, splitId: unknown) {
     }
   }
 
+  return { index, nameById, leftByCredit };
+}
+
+type LedgerContext = Awaited<ReturnType<typeof loadLedgerContext>>;
+
+/** The credits belonging to one or more splits, in natural order. */
+function findSplitCredits(uid: unknown, splitMatch: unknown) {
+  return Credit.find({ user: uid, split: splitMatch })
+    .select("person personRef amount date split")
+    .lean();
+}
+
+type SplitCredit = Awaited<ReturnType<typeof findSplitCredits>>[number];
+
+/** Shape one split's credits into participant rows against a resolved ledger. */
+function participantsOf(credits: SplitCredit[], ctx: LedgerContext) {
   return credits.map((c) => {
-    const key = ledgerKey(c, index);
+    const key = ledgerKey(c, ctx.index);
     const id = key.startsWith("id:") ? key.slice(3) : null;
-    const outstanding = leftByCredit.get(String(c._id)) ?? 0;
+    const outstanding = ctx.leftByCredit.get(String(c._id)) ?? 0;
     return {
       // The Person's current name, so a rename reaches past splits too.
-      person: (id && nameById.get(id)) || c.person,
+      person: (id && ctx.nameById.get(id)) || c.person,
       personId: id,
       amount: c.amount,
       credit: String(c._id),
@@ -354,6 +377,15 @@ export async function getSplitParticipants(uid: unknown, splitId: unknown) {
   });
 }
 
+/** Participants of a split, resolved from their credits, with what's still owed. */
+export async function getSplitParticipants(uid: unknown, splitId: unknown) {
+  const [credits, ctx] = await Promise.all([
+    findSplitCredits(uid, splitId),
+    loadLedgerContext(uid),
+  ]);
+  return participantsOf(credits, ctx);
+}
+
 /** Every split, newest first, with participants and settlement state attached. */
 export async function listSplits(uid: unknown) {
   const splits = await Split.find({ user: uid })
@@ -361,10 +393,27 @@ export async function listSplits(uid: unknown) {
     .populate({ path: "account", select: "name color icon currency" })
     .populate({ path: "category", select: "name color icon" })
     .lean();
+  if (splits.length === 0) return [];
 
-  return Promise.all(
-    splits.map(async (s) => ({ ...s, participants: await getSplitParticipants(uid, s._id) }))
-  );
+  // Three queries for the whole page, however many splits are on it: the ledger
+  // once, and every split's credits in one pass, grouped here by split.
+  const [credits, ctx] = await Promise.all([
+    findSplitCredits(uid, { $in: splits.map((s) => s._id) }),
+    loadLedgerContext(uid),
+  ]);
+
+  const bySplit = new Map<string, SplitCredit[]>();
+  for (const c of credits) {
+    const key = String(c.split);
+    const bucket = bySplit.get(key);
+    if (bucket) bucket.push(c);
+    else bySplit.set(key, [c]);
+  }
+
+  return splits.map((s) => ({
+    ...s,
+    participants: participantsOf(bySplit.get(String(s._id)) ?? [], ctx),
+  }));
 }
 
 /** One split with its participants, or null when it isn't the caller's. */
