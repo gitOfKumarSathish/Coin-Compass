@@ -80,13 +80,18 @@ async function applyInstalment(uid: string, holdingId: unknown, raw: unknown, te
 
 export async function createHolding(req: Request, res: Response) {
   const uid = userId(req);
-  const { instalment, trackAsGoal, ...body } = (req.body ?? {}) as Record<string, unknown>;
+  const { instalment, ...body } = (req.body ?? {}) as Record<string, unknown>;
   const data = holdingSchema.parse(body);
   assertTermForRD(data.subtype, data.termCount, instalment);
   const holding = await Holding.create({ ...data, user: uid });
   const schedule = await applyInstalment(uid, holding._id, instalment, data.termCount);
-  // After the schedule, because the goal's target and deadline are read off it.
-  const goal = trackAsGoal === undefined ? null : await syncDepositGoal(uid, holding._id, Boolean(trackAsGoal));
+  // A scheduled RD with a term is one savings plan. Its goal comes after the
+  // rule, because the target and deadline are read from that rule.
+  const goal = await syncDepositGoal(
+    uid,
+    holding._id,
+    holding.subtype === "recurring_deposit" && Boolean(schedule) && Boolean(holding.termCount)
+  );
   res
     .status(201)
     .json({ ...holding.toObject(), instalment: schedule ?? null, trackedAsGoal: Boolean(goal) });
@@ -94,7 +99,7 @@ export async function createHolding(req: Request, res: Response) {
 
 export async function updateHolding(req: Request, res: Response) {
   const uid = userId(req);
-  const { instalment, trackAsGoal, ...body } = (req.body ?? {}) as Record<string, unknown>;
+  const { instalment, ...body } = (req.body ?? {}) as Record<string, unknown>;
   const data = holdingUpdateSchema.parse(body);
   const current = await Holding.findOne({ _id: req.params.id, user: uid });
   if (!current) throw new HttpError(404, "Holding not found");
@@ -110,16 +115,23 @@ export async function updateHolding(req: Request, res: Response) {
   const holding = await Holding.findOneAndUpdate({ _id: req.params.id, user: uid }, data, { new: true });
   if (!holding) throw new HttpError(404, "Holding not found");
   const schedule = await applyInstalment(uid, holding._id, instalment, holding.termCount);
-  // Omitted means "leave it alone", the same as the schedule: a rename must not
-  // silently delete somebody's goal. When it is named, the sync also refreshes
-  // the goal's name, target and deadline from whatever the deposit now says.
-  if (trackAsGoal !== undefined) await syncDepositGoal(uid, holding._id, Boolean(trackAsGoal));
-  else await refreshDepositGoal(uid, holding._id);
+  const resolvedSchedule =
+    schedule !== undefined
+      ? schedule
+      : (await instalmentsFor(uid, [holding._id])).get(String(holding._id)) ?? null;
+  const managedGoal = await Goal.exists({ user: uid, linkedHolding: holding._id, managedByDeposit: true });
+  // Saving an older RD repairs the missing link. A different type only removes
+  // the goal that was created automatically for this former RD, never a goal
+  // the user linked to the holding by hand.
+  if (holding.subtype === "recurring_deposit" && resolvedSchedule && holding.termCount) {
+    await syncDepositGoal(uid, holding._id, true);
+  } else if (managedGoal) {
+    await syncDepositGoal(uid, holding._id, false);
+  }
 
   res.json({
     ...holding.toObject(),
-    instalment:
-      schedule !== undefined ? schedule : ((await instalmentsFor(uid, [holding._id])).get(String(holding._id)) ?? null),
+    instalment: resolvedSchedule,
     trackedAsGoal: Boolean(await Goal.exists({ user: uid, linkedHolding: holding._id })),
   });
 }
@@ -181,13 +193,6 @@ export async function adoptHoldingTransactions(req: Request, res: Response) {
   res.json(await adoptTransactions(uid, req.params.id, transactions));
 }
 
-/** Keep an existing deposit goal's name, target and deadline current. */
-async function refreshDepositGoal(uid: string, holdingId: unknown) {
-  if (await Goal.exists({ user: uid, linkedHolding: holdingId, managedByDeposit: true })) {
-    await syncDepositGoal(uid, holdingId, true);
-  }
-}
-
 /** Recurring rules that could be adopted as a deposit's schedule. */
 export async function linkableRules(req: Request, res: Response) {
   res.json(await unlinkedRules(userId(req)));
@@ -203,5 +208,10 @@ export async function linkableRules(req: Request, res: Response) {
 export async function linkHoldingRule(req: Request, res: Response) {
   const uid = userId(req);
   const { recurring } = holdingLinkRuleSchema.parse(req.body);
-  res.json(await linkRuleToHolding(uid, req.params.id, recurring));
+  const result = await linkRuleToHolding(uid, req.params.id, recurring);
+  const holding = await Holding.findOne({ _id: req.params.id, user: uid });
+  if (holding?.subtype === "recurring_deposit" && holding.termCount) {
+    await syncDepositGoal(uid, holding._id, true);
+  }
+  res.json(result);
 }

@@ -47,8 +47,6 @@ export interface InstalmentState {
   termCount: string;
   /** Where the maturity payout lands. */
   payoutAccount: string;
-  /** Whether a Goal should track this deposit's progress. */
-  trackAsGoal: boolean;
 }
 
 export function InstalmentFields({
@@ -62,6 +60,8 @@ export function InstalmentFields({
   schedulable = true,
   /** A recurring deposit runs for an agreed number of payments; others needn't. */
   needsTerm = false,
+  /** An RD is a savings plan, so its automatic instalment is required. */
+  required = false,
   /** Deposits that mature, and so have a payout to send somewhere. */
   matures = false,
 }: {
@@ -71,6 +71,7 @@ export function InstalmentFields({
   nextRun?: string | null;
   schedulable?: boolean;
   needsTerm?: boolean;
+  required?: boolean;
   matures?: boolean;
 }) {
   const { t } = useTranslation("wealth");
@@ -81,6 +82,7 @@ export function InstalmentFields({
   const accountName = options.find((a) => a._id === state.account)?.name;
   const amountNum = Number(state.amount) || 0;
   const term = Number(state.termCount) || 0;
+  const scheduleEnabled = required || state.on;
   // The last instalment, so the form can say when this finishes rather than
   // leaving the user to count twelve months forward in their head.
   const lastDue = term > 0 && state.startDate ? lastInstalment(state.startDate, state.cadence, term) : null;
@@ -120,14 +122,16 @@ export function InstalmentFields({
           <p className="text-sm font-medium">{t("instalment.title")}</p>
           <p className="text-xs text-muted-foreground">{t("instalment.subtitle")}</p>
         </div>
-        <Switch
-          checked={state.on}
-          onCheckedChange={(on) => set({ on })}
-          aria-label={t("instalment.title")}
-        />
+        {!required && (
+          <Switch
+            checked={state.on}
+            onCheckedChange={(on) => set({ on })}
+            aria-label={t("instalment.title")}
+          />
+        )}
       </div>
 
-      {state.on && (
+      {scheduleEnabled && (
         <div className="space-y-3 border-t pt-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -219,30 +223,20 @@ export function InstalmentFields({
 
           {payoutField}
 
-          {/* A deposit with a term already states a target, a deadline and
-              progress — which is a goal with different words on it. Offered
-              rather than assumed: a standing order into an emergency fund is a
-              habit, and a Goals page full of things nobody chose is worse than
-              an empty one. */}
+          {/* An RD with a term already has a target, deadline, and progress.
+              The app presents that one plan in Goals automatically. */}
           {needsTerm && (
-            <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border p-3">
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">{t("instalment.trackAsGoal")}</span>
-                <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                  {term > 0 && amountNum > 0
-                    ? t("instalment.trackAsGoalDetail", {
-                        target: formatMoney(term * amountNum),
-                        date: lastDue ? fmt(lastDue.toISOString()) : "",
-                      })
-                    : t("instalment.trackAsGoalHint")}
-                </span>
-              </span>
-              <Switch
-                checked={state.trackAsGoal}
-                onCheckedChange={(v) => set({ trackAsGoal: v })}
-                aria-label={t("instalment.trackAsGoal")}
-              />
-            </label>
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <p className="text-sm font-medium">{t("instalment.goalCreated")}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                {term > 0 && amountNum > 0
+                  ? t("instalment.goalCreatedDetail", {
+                      target: formatMoney(term * amountNum),
+                      date: lastDue ? fmt(lastDue.toISOString()) : "",
+                    })
+                  : t("instalment.goalCreatedHint")}
+              </p>
+            </div>
           )}
 
           {/* What will actually happen, in a sentence — because the mechanism

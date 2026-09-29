@@ -60,7 +60,6 @@ const NO_INSTALMENT: InstalmentState = {
   startDate: "",
   termCount: "",
   payoutAccount: "",
-  trackAsGoal: false,
 };
 
 /** ISO timestamp → the yyyy-mm-dd a <input type="date"> expects (no TZ shift). */
@@ -120,17 +119,12 @@ export function HoldingFormDialog({ open, onOpenChange, holding }: Props) {
             startDate: toDateInput(sched.startDate),
             termCount: holding?.termCount != null ? String(holding.termCount) : "",
             payoutAccount: payoutId(holding),
-            trackAsGoal: Boolean(holding?.trackedAsGoal),
           }
         : {
             ...NO_INSTALMENT,
             startDate: new Date().toISOString().slice(0, 10),
             termCount: holding?.termCount != null ? String(holding.termCount) : "",
             payoutAccount: payoutId(holding),
-            // On by default for a new RD: someone giving it a term is describing
-            // something they're saving *towards*. Editing an old one keeps
-            // whatever it already had.
-            trackAsGoal: holding ? Boolean(holding.trackedAsGoal) : true,
           }
     );
     // Open the growth section automatically if this holding already uses it.
@@ -158,6 +152,18 @@ export function HoldingFormDialog({ open, onOpenChange, holding }: Props) {
     // keep a valid subtype for the new class
     const list = next === "saving" ? SAVING_SUBTYPES : INVESTMENT_SUBTYPES;
     if (!list.some((s) => s.value === subtype)) setSubtype(list[0].value);
+  }
+
+  function changeSubtype(next: HoldingSubtype) {
+    setSubtype(next);
+    // An RD is a savings plan, so selecting it starts its required schedule.
+    if (next === "recurring_deposit") {
+      setInstalment((current) => ({
+        ...current,
+        on: true,
+        startDate: current.startDate || new Date().toISOString().slice(0, 10),
+      }));
+    }
   }
 
   async function submit() {
@@ -209,11 +215,6 @@ export function HoldingFormDialog({ open, onOpenChange, holding }: Props) {
       // bank agreed to, and the payout account is where it all comes back.
       termCount: instalment.termCount === "" ? null : Number(instalment.termCount),
       payoutAccount: instalment.payoutAccount || null,
-      // Only sent where the switch was shown. Omitted means "leave it alone",
-      // so saving an unrelated holding can't delete a goal it never displayed.
-      ...(showsInstalment && subtype === "recurring_deposit"
-        ? { trackAsGoal: instalment.on && instalment.trackAsGoal }
-        : {}),
     };
     try {
       if (isEdit && holding) {
@@ -237,13 +238,24 @@ export function HoldingFormDialog({ open, onOpenChange, holding }: Props) {
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="hold-name">{t("labels.name", { ns: "common" })}</Label>
+            <Label htmlFor="hold-name">
+              {subtype === "recurring_deposit"
+                ? t("holdingForm.savingPurpose")
+                : t("labels.name", { ns: "common" })}
+            </Label>
             <Input
               id="hold-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={t("holdingForm.namePlaceholder")}
+              placeholder={
+                subtype === "recurring_deposit"
+                  ? t("holdingForm.savingPurposePlaceholder")
+                  : t("holdingForm.namePlaceholder")
+              }
             />
+            {subtype === "recurring_deposit" && (
+              <p className="text-xs text-muted-foreground">{t("holdingForm.savingPurposeHint")}</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -260,7 +272,7 @@ export function HoldingFormDialog({ open, onOpenChange, holding }: Props) {
             </div>
             <div className="space-y-1.5">
               <Label>{t("labels.category", { ns: "common" })}</Label>
-              <Select value={subtype} onValueChange={(v) => setSubtype(v as HoldingSubtype)}>
+              <Select value={subtype} onValueChange={(v) => changeSubtype(v as HoldingSubtype)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -444,6 +456,7 @@ export function HoldingFormDialog({ open, onOpenChange, holding }: Props) {
               nextRun={instalment.on ? (holding?.instalment?.nextRun ?? null) : null}
               schedulable={takesInstalments(subtype)}
               needsTerm={subtype === "recurring_deposit"}
+              required={subtype === "recurring_deposit"}
               matures={MATURING_SUBTYPES.includes(subtype)}
             />
           )}

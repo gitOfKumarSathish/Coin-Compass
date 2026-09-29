@@ -15,6 +15,7 @@ import {
   Link2,
   Plus,
   Repeat,
+  Target,
   Trash2,
   Undo2,
   TrendingDown,
@@ -686,6 +687,14 @@ function AssetsTab({
                                   {h.provider ? ` · ${h.provider}` : ""}
                                 </p>
                                 <HoldingGrowthLine holding={h} />
+                                {h.subtype === "recurring_deposit" && h.trackedAsGoal && (
+                                  <Link
+                                    to="/goals"
+                                    className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                                  >
+                                    <Target className="h-3 w-3" /> {t("instalment.trackedInGoals")}
+                                  </Link>
+                                )}
                                 <InstalmentLine
                                   holding={h}
                                   onPayout={() => setDepositTarget({ holding: h, mode: "out" })}
@@ -716,6 +725,16 @@ function AssetsTab({
                                       {!h.instalment && SCHEDULABLE_SUBTYPES.includes(h.subtype) && (
                                         <DropdownMenuItem onClick={() => setLinkTarget(h)}>
                                           <Link2 /> {t("linkRule.action")}
+                                        </DropdownMenuItem>
+                                      )}
+                                      {h.subtype === "recurring_deposit" && h.instalment && h.termCount && !h.trackedAsGoal && (
+                                        <DropdownMenuItem
+                                          onClick={() => {
+                                            setEditing(h);
+                                            setOpen(true);
+                                          }}
+                                        >
+                                          <Target /> {t("instalment.setUpGoal")}
                                         </DropdownMenuItem>
                                       )}
                                       <DropdownMenuItem onClick={() => setAdoptTarget(h)}>
