@@ -3,15 +3,20 @@ import { format } from "date-fns";
 import { motion } from "motion/react";
 import {
   History,
+  Landmark,
   MoreVertical,
   Pause,
   Pencil,
+  PiggyBank,
   Play,
   Plus,
   Repeat,
   RefreshCw,
   SkipForward,
+  Target,
   Trash2,
+  TrendingUp,
+  UserRound,
   Zap,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -44,10 +49,35 @@ import { isDue, isEnded, monthlyAmount } from "@/lib/recurring";
 import { formatMoney } from "@/lib/format";
 import { categoryLabel } from "@/lib/i18nLabels";
 import { dateFnsLocale } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import type { Recurring } from "@/lib/types";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
+
+type OwnershipFilter = "all" | "mine" | "goals" | "assets" | "loans" | "investments";
+
+function matchesOwnership(r: Recurring, filter: OwnershipFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "mine") return !r.goal && !r.holding && !r.loan && !r.fund;
+  if (filter === "goals") return Boolean(r.goal);
+  if (filter === "assets") return Boolean(r.holding);
+  if (filter === "loans") return Boolean(r.loan);
+  return Boolean(r.fund);
+}
+
+/** The color is a quick scan aid; the badge text below carries the meaning. */
+function ownershipTone(r: Recurring): string {
+  if (r.holding) return "border-l-teal-500";
+  if (r.fund) return "border-l-sky-500";
+  if (r.goal) return "border-l-violet-500";
+  if (r.loan) return "border-l-amber-500";
+  return "border-l-slate-400 dark:border-l-slate-500";
+}
+
+function refName(ref: Recurring["goal"] | Recurring["loan"] | Recurring["holding"], fallback: string): string {
+  return ref && typeof ref === "object" && "name" in ref && ref.name ? ref.name : fallback;
+}
 
 function freqLabel(r: Recurring, t: TFunction) {
   const unit = { daily: "day", weekly: "week", monthly: "month", yearly: "year" }[r.frequency];
@@ -131,6 +161,7 @@ export default function RecurringPage() {
   const [historyFor, setHistoryFor] = useState<Recurring | null>(null);
   const [runDueOpen, setRunDueOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Recurring | null>(null);
+  const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>("all");
 
   async function confirmDelete(r: Recurring) {
     try {
@@ -143,6 +174,18 @@ export default function RecurringPage() {
   }
 
   const dueCount = useMemo(() => (items ?? []).filter((r) => isDue(r)).length, [items]);
+  const visibleItems = useMemo(
+    () => (items ?? []).filter((r) => matchesOwnership(r, ownershipFilter)),
+    [items, ownershipFilter]
+  );
+  const ownershipFilters: { value: OwnershipFilter; label: string }[] = [
+    { value: "all", label: t("filters.all") },
+    { value: "mine", label: t("filters.mine") },
+    { value: "goals", label: t("filters.goals") },
+    { value: "assets", label: t("filters.assets") },
+    { value: "loans", label: t("filters.loans") },
+    { value: "investments", label: t("filters.investments") },
+  ];
 
   function openNew() {
     setEditing(null);
@@ -196,14 +239,30 @@ export default function RecurringPage() {
       ) : items && items.length > 0 ? (
         <>
           <MonthlySummary items={items} />
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar" aria-label={t("filters.label")}>
+            {ownershipFilters.map((filter) => (
+              <Button
+                key={filter.value}
+                type="button"
+                size="sm"
+                variant={ownershipFilter === filter.value ? "secondary" : "outline"}
+                className="shrink-0"
+                aria-pressed={ownershipFilter === filter.value}
+                onClick={() => setOwnershipFilter(filter.value)}
+              >
+                {filter.label}
+              </Button>
+            ))}
+          </div>
           <div className="space-y-3">
-            {items.map((r, i) => {
+            {visibleItems.map((r, i) => {
               const overdue = isDue(r) && new Date(r.nextRun) < new Date();
               const ended = isEnded(r);
               // Surface the note so same-category rules stay distinguishable — but not
               // when it's already the title (no category) or just echoes the category.
               const note = r.note?.trim();
               const paysDeposit = Boolean(r.holding);
+              const isMine = !r.goal && !r.holding && !r.loan && !r.fund;
               const titleIsNote = r.type !== "transfer" && !r.category?.name;
               const noteEchoesCategory =
                 note && r.category?.name && note.toLowerCase() === r.category.name.toLowerCase();
@@ -215,7 +274,7 @@ export default function RecurringPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: Math.min(i * 0.04, 0.3) }}
               >
-                <Card className={r.active ? undefined : "opacity-70"}>
+                <Card className={cn("border-l-4", ownershipTone(r), !r.active && "opacity-70")}>
                   <CardContent className="flex items-center gap-4 p-4">
                     {/* A deposit rule has no category to draw from, and the
                         generic fallback made it look like an uncategorised
@@ -236,6 +295,33 @@ export default function RecurringPage() {
                         {freqLabel(r, t)} · {r.account?.name}
                         {detailNote ? ` · ${detailNote}` : ""}
                       </p>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {isMine && (
+                          <Badge variant="secondary" className="gap-1 text-muted-foreground">
+                            <UserRound className="h-3 w-3" /> {t("links.mine")}
+                          </Badge>
+                        )}
+                        {r.goal && (
+                          <Badge className="gap-1 border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">
+                            <Target className="h-3 w-3" /> {t("links.goal", { name: refName(r.goal, t("links.unnamed")) })}
+                          </Badge>
+                        )}
+                        {r.holding && (
+                          <Badge className="gap-1 border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                            <PiggyBank className="h-3 w-3" /> {t("links.asset", { name: refName(r.holding, t("links.unnamed")) })}
+                          </Badge>
+                        )}
+                        {r.loan && (
+                          <Badge className="gap-1 border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                            <Landmark className="h-3 w-3" /> {t("links.loan", { name: refName(r.loan, t("links.unnamed")) })}
+                          </Badge>
+                        )}
+                        {r.fund && (
+                          <Badge className="gap-1 border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300">
+                            <TrendingUp className="h-3 w-3" /> {t("links.sip", { name: r.payee || r.fund })}
+                          </Badge>
+                        )}
+                      </div>
                       <p className={`mt-0.5 truncate text-xs ${overdue ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
                         {ended
                           ? t("status.ended", { date: format(new Date(r.endDate as string), "dd MMM yyyy", { locale: dateFnsLocale() }) })
@@ -289,6 +375,11 @@ export default function RecurringPage() {
               </motion.div>
               );
             })}
+            {visibleItems.length === 0 && (
+              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                {t("filters.empty")}
+              </div>
+            )}
           </div>
         </>
       ) : (

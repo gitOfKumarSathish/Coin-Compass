@@ -17,6 +17,24 @@
     "ended": "Ended",
     "paused": "Paused"
   },
+  "filters": {
+    "label": "Rule ownership",
+    "all": "All rules",
+    "mine": "My rules",
+    "goals": "Goals",
+    "assets": "Assets",
+    "loans": "Loans",
+    "investments": "Investments",
+    "empty": "No recurring rules match this filter."
+  },
+  "links": {
+    "mine": "My rule",
+    "goal": "Goal · {{name}}",
+    "asset": "Asset · {{name}}",
+    "loan": "Loan · {{name}}",
+    "sip": "SIP · {{name}}",
+    "unnamed": "Unnamed"
+  },
   "every": {
     "day_one": "Every day",
     "day_other": "Every {{count}} days",
