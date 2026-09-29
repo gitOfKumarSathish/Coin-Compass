@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import {
   ArrowDownLeft,
@@ -56,6 +56,7 @@ import { useByCategory, useSummary } from "@/hooks/useReports";
 import { periodRange } from "@/lib/dates";
 import { formatMoney } from "@/lib/format";
 import { enumLabel } from "@/lib/i18nLabels";
+import { cn } from "@/lib/utils";
 import {
   SUBTYPE_META,
   CHART_PALETTE,
@@ -104,6 +105,7 @@ function takesDeposits(h: Holding): boolean {
 
 export default function NetWorthPage() {
   const { t, i18n } = useTranslation("wealth");
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: holdings, isLoading: holdingsLoading } = useHoldings();
   const { data: loans } = useLoans();
   const { data: accounts } = useAccounts();
@@ -178,6 +180,15 @@ export default function NetWorthPage() {
   );
 
   const negative = totals.netWorth < 0;
+  const selectedTab = ["overview", "assets", "liabilities"].includes(searchParams.get("tab") ?? "")
+    ? (searchParams.get("tab") as "overview" | "assets" | "liabilities")
+    : "overview";
+  function selectTab(tab: string) {
+    const next = new URLSearchParams(searchParams);
+    if (tab === "overview") next.delete("tab");
+    else next.set("tab", tab);
+    setSearchParams(next);
+  }
   // A one-line read of what the number means, so a negative figure isn't left unexplained.
   const netWorthNote = negative
     ? t("summary.noteNegative")
@@ -264,7 +275,7 @@ export default function NetWorthPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={selectedTab} onValueChange={selectTab}>
         <TabsList className="mb-5">
           <TabsTrigger value="overview">{t("tabs.overview")}</TabsTrigger>
           <TabsTrigger value="assets">{t("tabs.assets")}</TabsTrigger>
@@ -527,6 +538,7 @@ function AssetsTab({
   loading: boolean;
 }) {
   const { t } = useTranslation("wealth");
+  const [searchParams, setSearchParams] = useSearchParams();
   const del = useDeleteHolding();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Holding | null>(null);
@@ -535,6 +547,25 @@ function AssetsTab({
   const [adoptTarget, setAdoptTarget] = useState<Holding | null>(null);
   const [linkTarget, setLinkTarget] = useState<Holding | null>(null);
   const [undoTarget, setUndoTarget] = useState<Holding | null>(null);
+  const [highlightedHoldingId, setHighlightedHoldingId] = useState<string | null>(null);
+
+  // A linked rule lands on its plan card, not directly in an edit dialog. This
+  // keeps navigation predictable and leaves edits as an explicit user action.
+  useEffect(() => {
+    const holdingId = searchParams.get("holding");
+    if (!holdingId || !holdings) return;
+    const holding = holdings.find((item) => item._id === holdingId);
+    if (!holding) return;
+    setHighlightedHoldingId(holding._id);
+    const next = new URLSearchParams(searchParams);
+    next.delete("holding");
+    setSearchParams(next, { replace: true });
+  }, [holdings, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!highlightedHoldingId) return;
+    document.getElementById(`holding-${highlightedHoldingId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedHoldingId]);
 
   function openNew() {
     setEditing(null);
@@ -669,11 +700,12 @@ function AssetsTab({
                       {items.map((h, i) => (
                         <motion.div
                           key={h._id}
+                          id={`holding-${h._id}`}
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.2, delay: Math.min(i * 0.03, 0.2) }}
                         >
-                          <Card>
+                          <Card className={cn(highlightedHoldingId === h._id && "ring-2 ring-primary ring-offset-2 ring-offset-background")}>
                             <CardContent className="flex items-center gap-3 p-4">
                               <CategoryIcon
                                 icon={SUBTYPE_META[h.subtype].icon}

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { motion } from "motion/react";
 import {
+  AlertTriangle,
   History,
   Landmark,
   MoreVertical,
@@ -19,12 +20,21 @@ import {
   UserRound,
   Zap,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
@@ -151,6 +161,7 @@ function MonthlySummary({ items }: { items: Recurring[] }) {
 
 export default function RecurringPage() {
   const { t } = useTranslation("recurring");
+  const navigate = useNavigate();
   const { data: items, isLoading } = useRecurring();
   const del = useDeleteRecurring();
   const update = useUpdateRecurring();
@@ -161,6 +172,7 @@ export default function RecurringPage() {
   const [historyFor, setHistoryFor] = useState<Recurring | null>(null);
   const [runDueOpen, setRunDueOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Recurring | null>(null);
+  const [pausePlanTarget, setPausePlanTarget] = useState<Recurring | null>(null);
   const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>("all");
 
   async function confirmDelete(r: Recurring) {
@@ -206,6 +218,19 @@ export default function RecurringPage() {
   async function skipNext(r: Recurring) {
     await skip.mutateAsync(r._id);
     toast.success(t("toast.skipped"));
+  }
+
+  function openSavingsPlan(r: Recurring) {
+    const holdingId = r.holding && typeof r.holding === "object" ? r.holding._id : r.holding;
+    if (!holdingId) return;
+    navigate(`/net-worth?tab=assets&holding=${holdingId}`);
+  }
+
+  async function confirmPausePlan() {
+    if (!pausePlanTarget) return;
+    await update.mutateAsync({ id: pausePlanTarget._id, active: false });
+    setPausePlanTarget(null);
+    toast.success(t("toast.pausedPlan"));
   }
 
   return (
@@ -274,7 +299,7 @@ export default function RecurringPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: Math.min(i * 0.04, 0.3) }}
               >
-                <Card className={cn("border-l-4", ownershipTone(r), !r.active && "opacity-70")}>
+                <Card className={cn("overflow-hidden border-l-4", ownershipTone(r), !r.active && "opacity-70")}>
                   <CardContent className="flex items-center gap-4 p-4">
                     {/* A deposit rule has no category to draw from, and the
                         generic fallback made it look like an uncategorised
@@ -344,9 +369,15 @@ export default function RecurringPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(r)}>
-                          <Pencil /> {t("actions.edit", { ns: "common" })}
-                        </DropdownMenuItem>
+                        {paysDeposit ? (
+                          <DropdownMenuItem onClick={() => openSavingsPlan(r)}>
+                            <PiggyBank /> {t("menu.openSavingsPlan")}
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => openEdit(r)}>
+                            <Pencil /> {t("actions.edit", { ns: "common" })}
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onClick={() => runOneNow(r)} disabled={runOne.isPending}>
                           <Zap /> {t("menu.runNow")}
                         </DropdownMenuItem>
@@ -354,20 +385,24 @@ export default function RecurringPage() {
                           <SkipForward /> {t("menu.skipNext")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => update.mutate({ id: r._id, active: !r.active })}
+                          onClick={() => (paysDeposit && r.active ? setPausePlanTarget(r) : update.mutate({ id: r._id, active: !r.active }))}
                         >
                           {r.active ? <Pause /> : <Play />} {r.active ? t("menu.pause") : t("menu.resume")}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setHistoryFor(r)}>
                           <History /> {t("menu.viewPosted")}
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteTarget(r)}
-                        >
-                          <Trash2 /> {t("actions.delete", { ns: "common" })}
-                        </DropdownMenuItem>
+                        {!paysDeposit && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(r)}
+                            >
+                              <Trash2 /> {t("actions.delete", { ns: "common" })}
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </CardContent>
@@ -402,6 +437,26 @@ export default function RecurringPage() {
         onOpenChange={(o) => !o && setHistoryFor(null)}
         recurring={historyFor}
       />
+      <Dialog open={Boolean(pausePlanTarget)} onOpenChange={(open) => !open && setPausePlanTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" /> {t("planSafety.pauseTitle")}
+            </DialogTitle>
+            <DialogDescription>
+              {pausePlanTarget && t("planSafety.pauseDescription", { name: ruleName(pausePlanTarget, t) })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPausePlanTarget(null)}>
+              {t("actions.cancel", { ns: "common" })}
+            </Button>
+            <Button variant="outline" onClick={confirmPausePlan} disabled={update.isPending}>
+              <Pause /> {t("planSafety.pauseConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {deleteTarget && (
         <ConfirmDeleteDialog
           open={!!deleteTarget}

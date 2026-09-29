@@ -58,7 +58,13 @@
     "skipNext": "Skip next",
     "pause": "Pause",
     "resume": "Resume",
-    "viewPosted": "View posted"
+    "viewPosted": "View posted",
+    "openSavingsPlan": "Open savings plan"
+  },
+  "planSafety": {
+    "pauseTitle": "Pause this savings plan?",
+    "pauseDescription": "{{name}} will stop receiving automatic instalments. Its asset and goal stay in place, but the goal will no longer progress until you resume the plan.",
+    "pauseConfirm": "Pause plan"
   },
   "title": {
     "fallback": "Recurring"
@@ -71,6 +77,7 @@
     "posted_other": "Posted {{count}} transactions",
     "nothingDueRule": "Nothing due for this rule",
     "skipped": "Skipped the next occurrence",
+    "pausedPlan": "Savings plan paused",
     "deleted": "Deleted",
     "deleteFailed": "Failed to delete"
   },
